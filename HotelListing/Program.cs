@@ -3,49 +3,78 @@ using HotelListing.Configurations;
 using HotelListing.Data;
 using HotelListing.IRepository;
 using HotelListing.Repository;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args) ;
 
 // Add services to the container.
 
+
+//Database Connection.
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+builder.Services.AddDbContext<DatabaseContext>(opt => opt.UseSqlite(connectionString));
+
+builder.Services.AddIdentityCore<ApiUser>()
+    .AddRoles<IdentityRole>()
+    .AddTokenProvider<DataProtectorTokenProvider<ApiUser>>(AuthManager._loginProvider)
+    .AddEntityFrameworkStores<DatabaseContext>()
+    .AddDefaultTokenProviders();
+
 // added newton soft to fix error in section 3 GET/002
 builder.Services.AddControllers().AddNewtonsoftJson(options =>
     options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore
 );
-//builder.Services.AddIdentityCore<ApiUser>()
-//               .AddRoles<IdentityRole>()
-//              .AddEntityFrameworkStores<DatabaseContext>();
-builder.Services.AddAuthentication();
-builder.Services.ConfigureIdentity();
 
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-//Database 
-builder.Services.AddDbContext<DatabaseContext>(opt => opt.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
-
 //services cors
 builder.Services.AddCors(p => p.AddPolicy("CrosPolicy", builder =>
 {
-    builder.WithOrigins("*").AllowAnyMethod().AllowAnyHeader();
+    builder.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
 }));
 
-builder.Services.AddAutoMapper(typeof(MapperInitilizer));
-builder.Services.AddTransient<IUnitOfWork, UnitOfWork>();
+//add serilog serivce
+builder.Host.UseSerilog((ctx,lc) => lc.WriteTo.Console().ReadFrom.Configuration(ctx.Configuration));
 
-builder.Host.UseSerilog((hostContext, configuration) => 
-    //configuration.WriteTo.Console();
-    configuration.WriteTo.File(
-        path: "g:\\hotellistings\\logs\\log-.txt",
-        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zz} [{Level:u3}] {Message:lj}{NewLine}{Exception}",
-        rollingInterval: RollingInterval.Day,
-        restrictedToMinimumLevel: Serilog.Events.LogEventLevel.Information
-        ));
+//adding auto mapper
+builder.Services.AddAutoMapper(typeof(MapperConfig));
+
+//adding scopes
+builder.Services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
+builder.Services.AddScoped<ICountriesRepository, CountriesRepository>();
+builder.Services.AddScoped<IHotelsRepository, HotelsRepository>();
+builder.Services.AddScoped<IAuthManager, AuthManager>();
+
+//adding jwt options
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme; //  = Bearer
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+}
+).AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        ValidateAudience = true,
+        ValidateIssuer = true,
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero,
+        ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
+        ValidAudience = builder.Configuration["JwtSettings:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:Key"])),
+    };
+
+});
+
 
 var app = builder.Build();
 // Configure the HTTP request pipeline.
@@ -55,9 +84,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseCors("CorsPolicy");
 
 app.UseHttpsRedirection();
+
+app.UseCors("CorsPolicy");
+
+app.UseAuthentication();
 
 app.UseAuthorization();
 

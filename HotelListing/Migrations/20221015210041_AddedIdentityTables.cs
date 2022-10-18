@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace HotelListing.Migrations
 {
-    public partial class AddedIdentity : Migration
+    public partial class AddedIdentityTables : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {

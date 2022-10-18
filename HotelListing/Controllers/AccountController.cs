@@ -1,9 +1,8 @@
 ﻿using AutoMapper;
-using HotelListing.Data;
-using HotelListing.DTOs;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Identity;
+using HotelListing.IRepository;
 using Microsoft.AspNetCore.Mvc;
+using HotelListing.DTOs.User;
+using Microsoft.AspNetCore.Authorization;
 
 namespace HotelListing.Controllers
 {
@@ -11,50 +10,102 @@ namespace HotelListing.Controllers
     [ApiController]
     public class AccountController : ControllerBase
     {
-        private readonly UserManager<ApiUser> _userManager;
-        //private readonly SignInManager<ApiUser> _signInManager;
+        private readonly IAuthManager _authManager;
         private readonly ILogger<AccountController> _logger;
-        private readonly IMapper _mapper;
 
-        public AccountController(UserManager<ApiUser> userManager,ILogger<AccountController> logger, IMapper mapper)
+        public AccountController(IAuthManager authManager,ILogger<AccountController> logger)
         {
-            _userManager = userManager;
-            _mapper = mapper;
+            _authManager = authManager;
             _logger = logger;
-            //_signInManager = signInManager;
         }
-
+        //POST: api/account/register/admin
         [HttpPost]
-        [Route("register")]
-           public async Task<IActionResult> Register([FromBody] UserDTO userDTO)
+        [Route("register/admin")]
+        [Authorize(Roles = "Admin")]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+           public async Task<IActionResult> RegisterAdmin([FromBody] ApiUserDTO userDTO)
         {
-            _logger.LogInformation($"Registration Attemp for {userDTO.Email} and {userDTO.Password}");
-            if(!ModelState.IsValid)
+            var errors = await _authManager.Register(userDTO, "Admin");
+            if(errors.Any())
             {
+                foreach (var error in errors)
+                {
+                    ModelState.AddModelError(error.Code, error.Description);
+                }
                 return BadRequest(ModelState);
             }
+            return Ok(userDTO);
+
+        }
+
+
+        //POST: api/account/register
+        [HttpPost]
+        [Route("register")]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+           public async Task<IActionResult> Register([FromBody] ApiUserDTO userDTO)
+        {
+            _logger.LogInformation($"Attemp to register {userDTO.Email}");
+
             try
             {
-                var user = _mapper.Map<ApiUser>(userDTO); 
-                user.UserName = userDTO.Email;
-                var result = await _userManager.CreateAsync(user);
-                if (!result.Succeeded)
-                { 
-                    foreach (var error in result.Errors)
-                    {
-                        ModelState.AddModelError(error.Code, error.Description);
-                    }
-                    return BadRequest(ModelState);
+
+            var errors = await _authManager.Register(userDTO, "User");
+            if(errors.Any())
+            {
+                foreach (var error in errors)
+                {
+                    ModelState.AddModelError(error.Code, error.Description);
                 }
-                return Accepted();
+                return BadRequest(ModelState);
+            }
+            return Ok(userDTO);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Something went wrong in the {nameof(Register)}");
-                return StatusCode(500,"Internal server error, try again later.");
+                _logger.LogError(ex,$"Something went wrong in ${nameof(Register)} - user register attemp with email ${userDTO.Email}");
+                return Problem($"Something Went Wrong in the {nameof(Register)}",statusCode:500);
             }
+
         }
 
+        //POST: api/account/login
+        [HttpPost]
+        [Route("login")]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+           public async Task<IActionResult> Login([FromBody] LoginUserDTO userDTO)
+        {
+            var authResponse = await _authManager.Login(userDTO);
+            if (authResponse == null)
+            {
+                return Unauthorized();
+            }
+            return Ok(authResponse);
+
+        }
+
+        //POST: api/account/refreshtoken
+        [HttpPost]
+        [Route("refreshtoken")]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+           public async Task<IActionResult> RefreshToken([FromBody] AuthResponseDTO request)
+        {
+            var authResponse = await _authManager.VerifyRefreshToken(request);
+            if (authResponse == null)
+            {
+                return Unauthorized();
+            }
+            return Ok(authResponse);
+
+        }
         //[HttpPost]
         //[Route("login")]
         //   public async Task<IActionResult> Login([FromBody] LoginUserDTO loginUserDTO)

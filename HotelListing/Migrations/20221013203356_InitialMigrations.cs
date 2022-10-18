@@ -4,7 +4,7 @@
 
 namespace HotelListing.Migrations
 {
-    public partial class DatabaseCreated : Migration
+    public partial class InitialMigrations : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
